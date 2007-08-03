@@ -18,10 +18,8 @@ struct huffman_node {
 
 typedef struct huffman_node huffman_node_t;
 
-huffman_node_t *huffman_build_tree(huffman_node_t **, int);
 huffman_node_t *huffman_create_node(int, int, huffman_node_t *, huffman_node_t *);
 void huffman_delete_node(huffman_node_t *);
-void huffman_generate_codes(huffman_node_t *, int, int, huffman_node_t **);
-void huffman_print_codes(huffman_node_t *, int);
+huffman_node_t *huffman_build_tree(huffman_node_t **, int);
 
 #endif // HUFFMAN_H

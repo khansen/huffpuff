@@ -1,70 +1,9 @@
-/**
- * huffpuff - text encoding using Huffman
- *
- * Example of use:
- *
- * huffpuff example.tbl < text-file > assembly-file
- *
- * where text-file is a file containing the strings you wish to encode, and
- * assembly-file is the resulting 6502 assembly file.
- *
- * The default input string separator is newline, but you can use line
- * continuation to split a single string into several lines in a text editor.
- *
- * The output is 6502 assembly compatible with my assembler, xorcyst, but this
- * program can easily be changed to output assembly in a different format.
- *
- * The output contains
- * - table of Huffman nodes used to decode the strings
- * - table of strings of encoded data
- *
- * This file should be linked with my 6502 Huffman decoder, huffman.asm,
- * available elsewhere. You can then
- * - initialize the Huffman decoder:
- *     - call huff_set_decode_table with address of huff_node_table in (A, Y)
- *     - call huff_set_string_table with address of huff_string_table in (A, Y)
- * - decode a string, byte by byte:
- *     - call huff_set_string with string # in A (index into string pointer table)
- *     - call huff_next_byte to decode the next byte, returned in A
- */
-
 #include <malloc.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include "huffpuff.h"
 #include "charmap.h"
-
-/**
- * Builds a Huffman tree from an array of leafnodes with weights set.
- * @param nodes Array of Huffman leafnodes
- * @param nodecount Number of nodes in the array
- * @return Root of the resulting tree
- */
-huffman_node_t *huffman_build_tree(huffman_node_t **nodes, int nodecount)
-{
-    huffman_node_t *n;
-    huffman_node_t *n1;
-    huffman_node_t *n2;
-    int i, j, k;
-    for (i=nodecount-1; i>0; i--) {
-        /* Sort nodes based on frequency using simple bubblesort */
-        for (j=i; j>0; j--) {
-            for (k=0; k<j; k++) {
-                if (nodes[k]->weight < nodes[k+1]->weight) {
-                    n = nodes[k+1];
-                    nodes[k+1] = nodes[k];
-                    nodes[k] = n;
-                }
-            }
-        }
-        /* Combine nodes with two lowest frequencies */
-        n1 = nodes[i];
-        n2 = nodes[i-1];
-        nodes[i-1] = huffman_create_node(-1, n1->weight+n2->weight, n1, n2);
-    }
-    return nodes[0];    /* Root of tree */
-}
 
 /**
  * Creates a Huffman node.
@@ -102,22 +41,53 @@ void huffman_delete_node(huffman_node_t *node)
  * @param node Node
  * @param length Current length (in bits)
  * @param code Current code
- * @param map Mapping from symbol to leaf node
  */
-void huffman_generate_codes(huffman_node_t *node, int length, int code, huffman_node_t **map)
+static void huffman_generate_codes(huffman_node_t *node, int length, int code)
 {
     node->code.length = length;
     node->code.code = code;
-    if (node->symbol != -1) {
-        map[node->symbol] = node;
-    }
-    else {
+    if (node->symbol == -1) {
         length++;
         code <<= 1;
-        huffman_generate_codes(node->left, length, code, map);
+        huffman_generate_codes(node->left, length, code);
         code |= 1;
-        huffman_generate_codes(node->right, length, code, map);
+        huffman_generate_codes(node->right, length, code);
     }
+}
+
+/**
+ * Builds a Huffman tree from an array of leafnodes with weights set.
+ * @param nodes Array of Huffman leafnodes
+ * @param nodecount Number of nodes in the array
+ * @return Root of the resulting tree
+ */
+huffman_node_t *huffman_build_tree(huffman_node_t **nodes, int nodecount)
+{
+    huffman_node_t *n;
+    huffman_node_t *n1;
+    huffman_node_t *n2;
+    huffman_node_t *root;
+    int i, j, k;
+    for (i=nodecount-1; i>0; i--) {
+        /* Sort nodes based on frequency using simple bubblesort */
+        for (j=i; j>0; j--) {
+            for (k=0; k<j; k++) {
+                if (nodes[k]->weight < nodes[k+1]->weight) {
+                    n = nodes[k+1];
+                    nodes[k+1] = nodes[k];
+                    nodes[k] = n;
+                }
+            }
+        }
+        /* Combine nodes with two lowest frequencies */
+        n1 = nodes[i];
+        n2 = nodes[i-1];
+        nodes[i-1] = huffman_create_node(/*symbol=*/-1, n1->weight+n2->weight, n1, n2);
+    }
+    root = nodes[0];
+    /* Generate Huffman codes from tree. */
+    huffman_generate_codes(root, /*length=*/0, /*code=*/0);
+    return root;
 }
 
 struct huffman_node_list {
@@ -132,7 +102,7 @@ typedef struct huffman_node_list huffman_node_list_t;
  * @param out File to write to
  * @param root Root node of Huffman tree
  */
-void huffman_write_codes(FILE *out, huffman_node_t *root)
+static void write_huffman_codes(FILE *out, huffman_node_t *root)
 {
     huffman_node_list_t *current;
     huffman_node_list_t *tail;
@@ -144,18 +114,18 @@ void huffman_write_codes(FILE *out, huffman_node_t *root)
         huffman_node_list_t *tmp;
         huffman_node_t *node;
         node = current->node;
-        // label
+        /* label */
         fprintf(out, "node_%d_%d\t", node->code.code, node->code.length);
         if (node->symbol != -1) {
-            // a leaf node
+            /* a leaf node */
             fprintf(out, ".db $00, $%.2X\n", node->symbol);
         } else {
-            // an interior node -- print pointers to children
+            /* an interior node -- print pointers to children */
             huffman_node_list_t *succ;
             fprintf(out, ".db node_%d_%d-$, node_%d_%d-$+1\n",
                     node->code.code << 1, node->code.length+1,
                     (node->code.code << 1) | 1, node->code.length+1);
-            // add child nodes to list
+            /* add child nodes to list */
             succ = (huffman_node_list_t*)malloc(sizeof(huffman_node_list_t));
             succ->node = node->left;
             succ->next = (huffman_node_list_t*)malloc(sizeof(huffman_node_list_t));
@@ -289,129 +259,142 @@ static void write_huffman_strings(FILE *out, string_list_t *head, huffman_node_t
     free(buf);
 }
 
+string_list_t *read_strings(FILE *in, unsigned char *charmap, int *freq)
+{
+    unsigned char *buf;
+    string_list_t *head;
+    string_list_t **nextp;
+    int max_len;
+    int i;
+
+    /* Zap frequency counts. */
+    for (i=0; i<256; i++)
+        freq[i] = 0;
+
+    /* Read strings and count character frequencies as we go. */
+    head = NULL;
+    nextp = &head;
+    max_len = 64;
+    buf = (unsigned char *)malloc(max_len);
+    while (!feof(in)) {
+        /* Read one string (all chars until STRING_SEPARATOR) into temp buffer */
+        int c;
+        i = 0;
+        while (((c = fgetc(in)) != -1) && (c != STRING_SEPARATOR)) {
+                if (c == '\\') {
+                    /* Check for line escape */
+                    int d;
+                    d = fgetc(in);
+                    if (d == STRING_SEPARATOR) {
+                        continue;
+                    } else {
+                        ungetc(d, in);
+                    }
+                }
+                if (i == max_len) {
+                    /* Allocate larger buffer */
+                    max_len += 64;
+                    buf = (unsigned char *)realloc(buf, max_len);
+                }
+                c = charmap[c];
+                buf[i++] = c;
+                freq[c]++;
+        }
+        if (i > 0) {
+            /* Add string to list */
+            *nextp = (string_list_t *)malloc(sizeof(string_list_t));
+            (*nextp)->text = (unsigned char *)malloc(i+1);
+            memcpy((*nextp)->text, buf, i);
+            (*nextp)->text[i] = 0;
+            (*nextp)->next = NULL;
+            nextp = &((*nextp)->next);
+        }
+    }
+    free(buf);
+    return head;
+}
+
+void destroy_string_list(string_list_t *lst)
+{
+    string_list_t *tmp;
+    for ( ; lst != 0; lst = tmp) {
+        tmp = lst->next;
+        free(lst->text);
+        free(lst);
+    }
+}
+
 /**
  * Program entrypoint.
  */
 int main(int argc, char **argv)
 {
-    int i;
-    int c;
-    int d;
-    unsigned char map[256];
+    unsigned char charmap[256];
     int frequencies[256];
-    unsigned char *string;
-    string_list_t *head;
-    string_list_t **nextp;
-    string_list_t *l;
-    string_list_t *t;
-    int max_len;
     huffman_node_t *leaf_nodes[256];
     huffman_node_t *code_nodes[256];
     huffman_node_t *root;
     int symbol_count;
+    string_list_t *strings;
 
     /* Check argument count. */
     if (argc > 2) {
-        fprintf(stderr, "usage: huffman [TABLE-FILE] [< IN-FILE] [> OUT-FILE]\n");
+        fprintf(stderr, "usage: huffpuff [OPTION...]\n");
         return -1;
     }
 
-    /* Set default mapping f(c)=c */
-    for (i=0; i<256; i++) {
-        map[i] = (unsigned char)i;
+    /* Set default character mapping f(c)=c */
+    {
+        int i;
+        for (i=0; i<256; i++)
+            charmap[i] = (unsigned char)i;
     }
+
     if (argc == 2) {
         /* Read character map. */
-        if (charmap_parse(argv[1], map) == 0) {
-                fprintf(stderr, "error: could not open character map `%s' for reading\n", argv[1]);
-                return -1;
+        if (charmap_parse(argv[1], charmap) == 0) {
+            fprintf(stderr, "error: could not open character map `%s' for reading\n", argv[1]);
+            return -1;
         }
     }
 
-    /* Zap frequency counts. */
-    for (i=0; i<256; i++) {
-        frequencies[i] = 0;
-    }
-
-    /* Read strings and count character frequencies as we go. */
-    head = NULL;
-    nextp = &head;
-    max_len = 32;
-    string = (unsigned char *)malloc(max_len);
-    while (!feof(stdin)) {
-        /* Read one string (all chars until STRING_SEPARATOR) into temp buffer */
-        i=0;
-        while (((c = fgetc(stdin)) != -1) && (c != STRING_SEPARATOR)) {
-                if (c == '\\') {
-                    /* Check for line escape */
-                    d = fgetc(stdin);
-                    if (d == STRING_SEPARATOR) {
-                        continue;
-                    }
-                    else {
-                        ungetc(d, stdin);
-                    }
-                }
-                c = map[c];
-                string[i++] = c;
-                frequencies[c]++;
-                if (i == max_len) {
-                    /* Allocate larger buffer */
-                    max_len *= 2;
-                    string = (unsigned char *)realloc(string, max_len);
-                }
-        }
-        if (i > 0) {
-            /* Add string to list */
-            *nextp = (string_list_t *)malloc(sizeof(string_list_t));
-            (*nextp)->text = (unsigned char *)malloc(i);
-            memcpy((*nextp)->text, string, i);
-            (*nextp)->next = NULL;
-            nextp = &((*nextp)->next);
-        }
-    }
-    free(string);
+    /* Read strings to encode. */
+    strings = read_strings(stdin, charmap, frequencies);
 
     /* Create Huffman leaf nodes. */
     symbol_count = 0;
-    for (i=0; i<256; i++) {
-        if (frequencies[i] > 0) {
-            leaf_nodes[symbol_count++] = huffman_create_node(
-                /*symbol=*/i, /*weight=*/frequencies[i],
-                /*left=*/NULL, /*right=*/NULL);
+    {
+        int i;
+        for (i=0; i<256; i++) {
+            if (frequencies[i] > 0) {
+                huffman_node_t *node;
+                node = huffman_create_node(
+                    /*symbol=*/i, /*weight=*/frequencies[i],
+                    /*left=*/NULL, /*right=*/NULL);
+                leaf_nodes[symbol_count++] = node;
+                code_nodes[i] = node;
+            } else {
+                code_nodes[i] = 0;
+            }
         }
     }
 
     /* Build the Huffman tree. */
     root = huffman_build_tree(leaf_nodes, symbol_count);
 
-    /* Generate Huffman codes from tree. */
-    huffman_generate_codes(root, /*length=*/0, /*code=*/0, code_nodes);
-
-    /* Print ASM header */
-    fprintf(stdout, ".codeseg\n\n");
-    fprintf(stdout, ".public huff_node_table, huff_string_table\n\n");
-
     /* Print the Huffman codes in code length order. */
     fprintf(stdout, "huff_node_table:\n");
-    huffman_write_codes(stdout, root);
+    write_huffman_codes(stdout, root);
     fprintf(stdout, "\n");
 
     /* Huffman-encode strings. */
-    write_huffman_strings(stdout, head, code_nodes);
-
-    /* Print ASM footer */
-    fprintf(stdout, "\n.end\n");
+    write_huffman_strings(stdout, strings, code_nodes);
 
     /* Free the Huffman tree. */
     huffman_delete_node(root);
 
     /* Free string list */
-    for (l=head; l!=NULL; l = t) {
-        t = l->next;
-        free(l->text);
-        free(l);
-    }
+    destroy_string_list(strings);
 
     return 0;
 }
