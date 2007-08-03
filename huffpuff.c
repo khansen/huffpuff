@@ -120,29 +120,53 @@ void huffman_generate_codes(huffman_node_t *node, int length, int code, huffman_
     }
 }
 
+struct huffman_node_list {
+    struct huffman_node_list *next;
+    huffman_node_t *node;
+};
+
+typedef struct huffman_node_list huffman_node_list_t;
+
 /**
  * Writes codes for nodes in a Huffman tree recursively.
  * @param out File to write to
- * @param node Node
- * @param length Code length of nodes to write
+ * @param root Root node of Huffman tree
  */
-void huffman_write_codes(FILE *out, huffman_node_t *node, int length)
+void huffman_write_codes(FILE *out, huffman_node_t *root)
 {
-    if ((node == NULL) || (node->code.length > length)) {
-        return;
-    }
-    else if (node->code.length == length) {
+    huffman_node_list_t *current;
+    huffman_node_list_t *tail;
+    current = (huffman_node_list_t*)malloc(sizeof(huffman_node_list_t));
+    current->node = root;
+    current->next = 0;
+    tail = current;
+    while (current) {
+        huffman_node_list_t *tmp;
+        huffman_node_t *node;
+        node = current->node;
+        // label
         fprintf(out, "node_%d_%d\t", node->code.code, node->code.length);
         if (node->symbol != -1) {
+            // a leaf node
             fprintf(out, ".db $00, $%.2X\n", node->symbol);
+        } else {
+            // an interior node -- print pointers to children
+            huffman_node_list_t *succ;
+            fprintf(out, ".db node_%d_%d-$, node_%d_%d-$+1\n",
+                    node->code.code << 1, node->code.length+1,
+                    (node->code.code << 1) | 1, node->code.length+1);
+            // add child nodes to list
+            succ = (huffman_node_list_t*)malloc(sizeof(huffman_node_list_t));
+            succ->node = node->left;
+            succ->next = (huffman_node_list_t*)malloc(sizeof(huffman_node_list_t));
+            succ->next->node = node->right;
+            succ->next->next = 0;
+            tail->next = succ;
+            tail = succ->next;
         }
-        else {
-            fprintf(out, ".db node_%d_%d-$, node_%d_%d-$+1\n", node->code.code << 1, node->code.length+1, (node->code.code << 1) | 1, node->code.length+1);
-        }
-    }
-    else {
-        huffman_write_codes(out, node->left, length);
-        huffman_write_codes(out, node->right, length);
+        tmp = current->next;
+        free(current);
+        current = tmp;
     }
 }
 
@@ -352,7 +376,9 @@ int main(int argc, char **argv)
     symbol_count = 0;
     for (i=0; i<256; i++) {
         if (frequencies[i] > 0) {
-            leaf_nodes[symbol_count++] = huffman_create_node(i, frequencies[i], NULL, NULL);
+            leaf_nodes[symbol_count++] = huffman_create_node(
+                /*symbol=*/i, /*weight=*/frequencies[i],
+                /*left=*/NULL, /*right=*/NULL);
         }
     }
 
@@ -368,9 +394,7 @@ int main(int argc, char **argv)
 
     /* Print the Huffman codes in code length order. */
     fprintf(stdout, "huff_node_table:\n");
-    for (i=0; i<32; i++) {
-        huffman_write_codes(stdout, root, i);
-    }
+    huffman_write_codes(stdout, root);
     fprintf(stdout, "\n");
 
     /* Huffman-encode strings. */
