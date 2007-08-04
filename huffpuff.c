@@ -115,14 +115,15 @@ static void write_huffman_codes(FILE *out, huffman_node_t *root)
         huffman_node_t *node;
         node = current->node;
         /* label */
-        fprintf(out, "node_%d_%d\t", node->code.code, node->code.length);
+        if (node != root)
+            fprintf(out, "@@node_%d_%d: ", node->code.code, node->code.length);
         if (node->symbol != -1) {
             /* a leaf node */
             fprintf(out, ".db $00, $%.2X\n", node->symbol);
         } else {
             /* an interior node -- print pointers to children */
             huffman_node_list_t *succ;
-            fprintf(out, ".db node_%d_%d-$, node_%d_%d-$+1\n",
+            fprintf(out, ".db @@node_%d_%d-$, @@node_%d_%d-$+1\n",
                     node->code.code << 1, node->code.length+1,
                     (node->code.code << 1) | 1, node->code.length+1);
             /* add child nodes to list */
@@ -160,8 +161,8 @@ typedef struct string_list string_list_t;
  * @param size Total number of bytes
  * @param cols Number of columns
  */
-static void write_chunk(FILE *out, char *label, char *comment,
-                        unsigned char *buf, int size, int cols)
+static void write_chunk(FILE *out, const char *label, const char *comment,
+                        const unsigned char *buf, int size, int cols)
 {
     int i, j, k, m;
     if (label)
@@ -189,39 +190,35 @@ static void write_chunk(FILE *out, char *label, char *comment,
 /**
  * Encodes the strings and writes the encoded data to file.
  * @param out File to write to
+ * @param head Head of list of strings to encode & write
+ * @param codes Mapping from character to Huffman node
  */
-static void write_huffman_strings(FILE *out, string_list_t *head, huffman_node_t **codes)
+static void write_huffman_strings(FILE *out, const string_list_t *head,
+                                  huffman_node_t * const *codes,
+                                  const char *label_prefix)
 {
-    string_list_t *string;
+    const string_list_t *string;
     int i;
-    char strname[256];
-    char strcomment[80];
     unsigned char *buf;
     unsigned char enc=0;
-    huffman_node_t *node;
+    const huffman_node_t *node;
     int len;
     int bitnum;
     int strnum=0;
     int maxlen=0;
     buf = 0;
-#if 0
-    /* Print pointer table */
-    fprintf(out, "huff_string_table:\n");
-    for (i=0, string=head; string!=NULL; string=string->next, i++) {
-        fprintf(out, ".dw string_%d\n", i);
-    }
-    fprintf(out, "\n");
-#endif
     /* Do all strings. */
-    for (string=head; string!=NULL; string=string->next) {
+    for (string = head; string != NULL; string = string->next) {
         /* Do all characters in string. */
+        char strlabel[256];
+        char strcomment[80];
         unsigned char *p;
         len=0;
         bitnum=7;
         p = string->text;
         while (*p) {
             node = codes[*(p++)];
-            for (i=node->code.length-1; i>=0; i--) {
+            for (i = node->code.length-1; i >= 0; i--) {
                 enc |= ((node->code.code >> i) & 1) << bitnum--;
                 if (bitnum < 0) {
                     if (len == maxlen) {
@@ -242,7 +239,7 @@ static void write_huffman_strings(FILE *out, string_list_t *head, huffman_node_t
             buf[len++] = enc;
         }
 
-        sprintf(strname, "string_%d", strnum++);
+        sprintf(strlabel, "%sstring_%d", label_prefix, strnum++);
 
         strcpy(strcomment, "\"");
         if (strlen(string->text) < 40) {
@@ -254,12 +251,20 @@ static void write_huffman_strings(FILE *out, string_list_t *head, huffman_node_t
         strcat(strcomment, "\"");
 
         /* Write encoded data */
-        write_chunk(out, strname, strcomment, buf, len, 16);
+        write_chunk(out, strlabel, strcomment, buf, len, 16);
     }
     free(buf);
 }
 
-string_list_t *read_strings(FILE *in, unsigned char *charmap, int *freq)
+/**
+ * Reads strings from a file, transforms the characters according to a
+ * character mapping, and computes the frequencies of the characters.
+ * @param in File to read from
+ * @param charmap Character map
+ * @param freq Where to store computed frequencies
+ * @return The resulting list of strings
+ */
+string_list_t *read_strings(FILE *in, const unsigned char *charmap, int *freq)
 {
     unsigned char *buf;
     string_list_t *head;
@@ -268,7 +273,7 @@ string_list_t *read_strings(FILE *in, unsigned char *charmap, int *freq)
     int i;
 
     /* Zap frequency counts. */
-    for (i=0; i<256; i++)
+    for (i = 0; i < 256; i++)
         freq[i] = 0;
 
     /* Read strings and count character frequencies as we go. */
@@ -300,6 +305,7 @@ string_list_t *read_strings(FILE *in, unsigned char *charmap, int *freq)
                 buf[i++] = c;
                 freq[c]++;
         }
+
         if (i > 0) {
             /* Add string to list */
             *nextp = (string_list_t *)malloc(sizeof(string_list_t));
@@ -336,11 +342,64 @@ int main(int argc, char **argv)
     huffman_node_t *root;
     int symbol_count;
     string_list_t *strings;
+    FILE *input;
+    FILE *table_output;
+    FILE *data_output;
+    char *input_filename = 0;
+    char *charmap_filename = 0;
+    char *table_output_filename = 0;
+    char *data_output_filename = 0;
+    char *table_label = 0;
+    char *string_label_prefix = "";
+    int generate_string_table = 0;
 
-    /* Check argument count. */
-    if (argc > 2) {
-        fprintf(stderr, "usage: huffpuff [OPTION...]\n");
-        return -1;
+    /* Process arguments. */
+    {
+        char *p;
+        while ((p = *(++argv))) {
+            if (!strncmp("--", p, 2)) {
+                const char *opt = &p[2];
+                if (!stricmp("character-map", opt)) {
+                    charmap_filename = *(++argv);
+                } else if (!stricmp("table-output", opt)) {
+                    table_output_filename = *(++argv);
+                } else if (!stricmp("data-output", opt)) {
+                    data_output_filename = *(++argv);
+                } else if (!stricmp("table-label", opt)) {
+                    table_label = *(++argv);
+                } else if (!stricmp("generate-string-table", opt)) {
+                    generate_string_table = 1;
+                } else if (!stricmp("string-label-prefix", opt)) {
+                    string_label_prefix = *(++argv);
+                } else {
+                    fprintf(stderr, "unrecognized option `%s'\n", p);
+                    return(-1);
+                }
+            } else {
+                input_filename = p;
+            }
+        }
+    }
+
+    /* Prepare output */
+    if (!table_output_filename) {
+        table_output_filename = "huffpuff.tab";
+    }
+    table_output = fopen(table_output_filename, "wt");
+    if (!table_output) {
+        fprintf(stderr, "error: failed to open `%s' for writing\n",
+                table_output_filename);
+        return(-1);
+    }
+
+    if (!data_output_filename) {
+        data_output_filename = "huffpuff.dat";
+    }
+    data_output = fopen(data_output_filename, "wt");
+    if (!data_output) {
+        fprintf(stderr, "error: failed to open `%s' for writing\n",
+                data_output_filename);
+        return(-1);
     }
 
     /* Set default character mapping f(c)=c */
@@ -350,16 +409,30 @@ int main(int argc, char **argv)
             charmap[i] = (unsigned char)i;
     }
 
-    if (argc == 2) {
-        /* Read character map. */
-        if (charmap_parse(argv[1], charmap) == 0) {
-            fprintf(stderr, "error: could not open character map `%s' for reading\n", argv[1]);
-            return -1;
+    if (charmap_filename) {
+        if (!charmap_parse(charmap_filename, charmap)) {
+            fprintf(stderr, "error: failed to parse character map `%s'\n",
+                    charmap_filename);
+            return(-1);
         }
     }
 
+    if (input_filename) {
+        input = fopen(input_filename, "rt");
+        if (!input) {
+            fprintf(stderr, "error: failed to open `%s' for reading\n",
+                    input_filename);
+            return(-1);
+        }
+    } else {
+        input = stdin;
+    }
+
+    if (!table_label)
+        table_label = "huff_node_table";
+
     /* Read strings to encode. */
-    strings = read_strings(stdin, charmap, frequencies);
+    strings = read_strings(input, charmap, frequencies);
 
     /* Create Huffman leaf nodes. */
     symbol_count = 0;
@@ -383,18 +456,32 @@ int main(int argc, char **argv)
     root = huffman_build_tree(leaf_nodes, symbol_count);
 
     /* Print the Huffman codes in code length order. */
-    fprintf(stdout, "huff_node_table:\n");
-    write_huffman_codes(stdout, root);
-    fprintf(stdout, "\n");
+    fprintf(table_output, "%s:\n", table_label);
+    write_huffman_codes(table_output, root);
+
+    if (generate_string_table) {
+        /* Print string pointer table */
+        int i;
+        string_list_t *lst;
+        fprintf(data_output, "huff_string_table:\n");
+        for (i = 0, lst = strings; lst != 0; lst = lst->next, ++i) {
+            fprintf(data_output, ".dw @@string_%d\n", i);
+        }
+        string_label_prefix = "@@";
+    }
 
     /* Huffman-encode strings. */
-    write_huffman_strings(stdout, strings, code_nodes);
+    write_huffman_strings(data_output, strings, code_nodes, string_label_prefix);
 
     /* Free the Huffman tree. */
     huffman_delete_node(root);
 
     /* Free string list */
     destroy_string_list(strings);
+
+    fclose(input);
+    fclose(table_output);
+    fclose(data_output);
 
     return 0;
 }
