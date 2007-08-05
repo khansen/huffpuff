@@ -362,6 +362,44 @@ void destroy_string_list(string_list_t *lst)
     }
 }
 
+static char program_version[] = "huffpuff 1.0.5";
+
+/* Prints usage message and exits. */
+static void usage()
+{
+    printf(
+        "Usage: huffpuff [--character-map FILE]\n"
+        "                [--table-output FILE] [--data-output FILE]\n"
+        "                [--table-label LABEL] [--string-label-prefix PREFIX]\n"
+        "                [--generate-string-table]\n"
+        "                [--help] [--usage] [--version]\n"
+        "                FILE\n");
+    exit(0);
+}
+
+/* Prints help message and exits. */
+static void help()
+{
+    printf("Usage: huffpuff [OPTION...] FILE\n\n"
+           "  --character-map FILE            Transform input according to FILE\n"
+           "  --table-output FILE             Store Huffman decoder table in FILE\n"
+           "  --data-output FILE              Store Huffman-encoded data in FILE\n"
+           "  --table-label LABEL             Use given LABEL for Huffman decoder table\n"
+           "  --string-label-prefix PREFIX    Use given PREFIX as string label prefix\n"
+           "  --generate-string-table         Generate string pointer table\n"
+           "  --help                          Give this help list\n"
+           "  --usage                         Give a short usage message\n"
+           "  --version                       Print program version\n");
+    exit(0);
+}
+
+/* Prints version and exits. */
+static void version()
+{
+    printf("%s\n", program_version);
+    exit(0);
+}
+
 /**
  * Program entrypoint.
  */
@@ -403,6 +441,12 @@ int main(int argc, char **argv)
                     generate_string_table = 1;
                 } else if (!stricmp("string-label-prefix", opt)) {
                     string_label_prefix = *(++argv);
+                } else if (!stricmp("help", opt)) {
+                    help();
+                } else if (!stricmp("usage", opt)) {
+                    usage();
+                } else if (!stricmp("version", opt)) {
+                    version();
                 } else {
                     fprintf(stderr, "unrecognized option `%s'\n", p);
                     return(-1);
