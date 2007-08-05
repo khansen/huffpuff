@@ -124,8 +124,7 @@ static unsigned char get_value(char *s)
 {
     if (s[0] == '$') {
         return strtol(&s[1], NULL, 16);
-    }
-    else if (s[0] == '%') {
+    } else if (s[0] == '%') {
         return strtol(&s[1], NULL, 2);
     }
     return strtol(s, NULL, 0);
@@ -141,10 +140,6 @@ int charmap_parse(char *filename, unsigned char *map)
 {
     int lineno;
     FILE *fp;
-    unsigned char key;
-    unsigned char hkey;
-    unsigned char value;
-    int i;
     char line[1024];
     /* Attempt to open the file */
     fp = fopen(filename, "rt");
@@ -155,8 +150,15 @@ int charmap_parse(char *filename, unsigned char *map)
     lineno = 0;
     /* Read mappings */
     while (fgets(line, 1023, fp) != NULL) {
+        unsigned char key;
+        unsigned char hkey;
+        unsigned char value;
+        int i;
         /* Increase line number */
         lineno++;
+        /* Comment? */
+        if (line[0] == '#')
+            continue;
         /* Reset line index */
         i = 0;
         /* Read key */
