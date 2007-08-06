@@ -56,7 +56,7 @@
  * @param line Line of file
  * @param fmt printf-style format string
  */
-static void maperr(char *filename, int line, char *fmt, ...)
+static void maperr(const char *filename, int line, char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
@@ -136,7 +136,7 @@ static unsigned char get_value(char *s)
  * @param map 256-byte buffer where parsed map shall be stored
  * @return 0 if fail, 1 if OK
  */
-int charmap_parse(char *filename, unsigned char *map)
+int charmap_parse(const char *filename, unsigned char *map)
 {
     int lineno;
     FILE *fp;

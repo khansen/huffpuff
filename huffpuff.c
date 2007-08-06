@@ -293,9 +293,9 @@ static void write_chunk(FILE *out, const char *label, const char *comment,
                         const unsigned char *buf, int size, int cols)
 {
     int i, j, k, m;
-    if (label)
+    if (label && strlen(label))
         fprintf(out, "%s:\n", label);
-    if (comment)
+    if (comment && strlen(comment))
         fprintf(out, "; %s\n", comment);
     k=0;
     for (i=0; i<size/cols; i++) {
@@ -368,9 +368,9 @@ static char program_version[] = "huffpuff 1.0.5";
 static void usage()
 {
     printf(
-        "Usage: huffpuff [--character-map FILE]\n"
-        "                [--table-output FILE] [--data-output FILE]\n"
-        "                [--table-label LABEL] [--string-label-prefix PREFIX]\n"
+        "Usage: huffpuff [--character-map=FILE]\n"
+        "                [--table-output=FILE] [--data-output=FILE]\n"
+        "                [--table-label=LABEL] [--string-label-prefix=PREFIX]\n"
         "                [--generate-string-table]\n"
         "                [--help] [--usage] [--version]\n"
         "                FILE\n");
@@ -381,11 +381,11 @@ static void usage()
 static void help()
 {
     printf("Usage: huffpuff [OPTION...] FILE\n\n"
-           "  --character-map FILE            Transform input according to FILE\n"
-           "  --table-output FILE             Store Huffman decoder table in FILE\n"
-           "  --data-output FILE              Store Huffman-encoded data in FILE\n"
-           "  --table-label LABEL             Use given LABEL for Huffman decoder table\n"
-           "  --string-label-prefix PREFIX    Use given PREFIX as string label prefix\n"
+           "  --character-map=FILE            Transform input according to FILE\n"
+           "  --table-output=FILE             Store Huffman decoder table in FILE\n"
+           "  --data-output=FILE              Store Huffman-encoded data in FILE\n"
+           "  --table-label=LABEL             Use given LABEL for Huffman decoder table\n"
+           "  --string-label-prefix=PREFIX    Use given PREFIX as string label prefix\n"
            "  --generate-string-table         Generate string pointer table\n"
            "  --help                          Give this help list\n"
            "  --usage                         Give a short usage message\n"
@@ -415,12 +415,12 @@ int main(int argc, char **argv)
     FILE *input;
     FILE *table_output;
     FILE *data_output;
-    char *input_filename = 0;
-    char *charmap_filename = 0;
-    char *table_output_filename = 0;
-    char *data_output_filename = 0;
-    char *table_label = 0;
-    char *string_label_prefix = "";
+    const char *input_filename = 0;
+    const char *charmap_filename = 0;
+    const char *table_output_filename = 0;
+    const char *data_output_filename = 0;
+    const char *table_label = 0;
+    const char *string_label_prefix = "";
     int generate_string_table = 0;
 
     /* Process arguments. */
@@ -429,23 +429,23 @@ int main(int argc, char **argv)
         while ((p = *(++argv))) {
             if (!strncmp("--", p, 2)) {
                 const char *opt = &p[2];
-                if (!stricmp("character-map", opt)) {
-                    charmap_filename = *(++argv);
-                } else if (!stricmp("table-output", opt)) {
-                    table_output_filename = *(++argv);
-                } else if (!stricmp("data-output", opt)) {
-                    data_output_filename = *(++argv);
-                } else if (!stricmp("table-label", opt)) {
-                    table_label = *(++argv);
-                } else if (!stricmp("generate-string-table", opt)) {
+                if (!strncmp("character-map=", opt, 14)) {
+                    charmap_filename = &opt[14];
+                } else if (!strncmp("table-output=", opt, 13)) {
+                    table_output_filename = &opt[13];
+                } else if (!strncmp("data-output=", opt, 12)) {
+                    data_output_filename = &opt[12];
+                } else if (!strncmp("table-label=", opt, 12)) {
+                    table_label = &opt[12];
+                } else if (!strcmp("generate-string-table", opt)) {
                     generate_string_table = 1;
-                } else if (!stricmp("string-label-prefix", opt)) {
-                    string_label_prefix = *(++argv);
-                } else if (!stricmp("help", opt)) {
+                } else if (!strncmp("string-label-prefix=", opt, 20)) {
+                    string_label_prefix = &opt[20];
+                } else if (!strcmp("help", opt)) {
                     help();
-                } else if (!stricmp("usage", opt)) {
+                } else if (!strcmp("usage", opt)) {
                     usage();
-                } else if (!stricmp("version", opt)) {
+                } else if (!strcmp("version", opt)) {
                     version();
                 } else {
                     fprintf(stderr, "unrecognized option `%s'\n", p);
@@ -535,7 +535,8 @@ int main(int argc, char **argv)
     }
 
     /* Print the Huffman codes in code length order. */
-    fprintf(table_output, "%s:\n", table_label);
+    if (table_label && strlen(table_label))
+        fprintf(table_output, "%s:\n", table_label);
     write_huffman_codes(table_output, root, charmap);
 
     if (generate_string_table) {
