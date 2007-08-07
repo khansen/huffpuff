@@ -330,7 +330,7 @@ static void write_huffman_strings(FILE *out, const string_list_t *head,
         char strlabel[256];
         char strcomment[80];
 
-        sprintf(strlabel, "%sstring_%d", label_prefix, string_id++);
+        sprintf(strlabel, "%sString%d", label_prefix, string_id++);
 
         strcpy(strcomment, "\"");
         if (strlen(string->text) < 40) {
@@ -545,7 +545,7 @@ int main(int argc, char **argv)
         string_list_t *lst;
         fprintf(data_output, "huff_string_table:\n");
         for (i = 0, lst = strings; lst != 0; lst = lst->next, ++i) {
-            fprintf(data_output, ".dw @@string_%d\n", i);
+            fprintf(data_output, ".dw @@String%d\n", i);
         }
         string_label_prefix = "@@";
     }
