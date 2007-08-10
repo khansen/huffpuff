@@ -238,12 +238,12 @@ static void encode_strings(string_list_t *head, huffman_node_t * const *codes)
 {
     string_list_t *string;
     unsigned char *buf;
-    unsigned char enc=0;
-    int maxlen=0;
+    int maxlen = 0;
     buf = 0;
     /* Do all strings. */
     for (string = head; string != NULL; string = string->next) {
         /* Do all characters in string. */
+        unsigned char enc = 0;
         const huffman_node_t *node;
         int i;
         int len;
@@ -280,6 +280,71 @@ static void encode_strings(string_list_t *head, huffman_node_t * const *codes)
         string->huff_size = len;
     }
     free(buf);
+}
+
+/**
+ * Decodes a Huffman-encoded string; helpful for debugging.
+ * @param root Root node of Huffman tree
+ * @param data Encoded data
+ * @param len Length of string
+ * @param out Where to store decoded string
+ */
+static void decode_string(huffman_node_t *root, const unsigned char *data,
+                          int len, char *out)
+{
+    huffman_node_t *n;
+    int mask = 0;
+    unsigned char bite;
+    int i;
+    for (i = 0; i < len; ++i) {
+        n = root;
+        while (1) {
+            if (n->symbol != -1) {
+                out[i] = (char)n->symbol;
+                break;
+            }
+            if (!mask) {
+                bite = *(data++);
+                mask = 0x80;
+            }
+            int isset = (bite & mask) != 0;
+            mask >>= 1;
+            if (isset)
+                n = n->right;
+            else
+                n = n->left;
+        }
+    }
+    out[len] = 0;
+}
+
+/**
+ * Verifies that decoding the Huffman data results in the original strings.
+ * @param head Strings
+ * @param root Root of Huffman tree
+ */
+static int verify_data_integrity(string_list_t *head, huffman_node_t *root)
+{
+    string_list_t *str;
+    unsigned char *buf = 0;
+    int max_len = 0;
+    for (str = head; str != NULL; str = str->next) {
+        int len = strlen(str->text);
+        if (len > max_len) {
+            buf = (unsigned char *)realloc(buf, len + 1);
+            max_len = len;
+        }
+        decode_string(root, str->huff_data, len, buf);
+        if (strcmp(buf, str->text)) {
+            fprintf(stderr, "*** fatal error: decoded string is not equal to original string\n");
+            fprintf(stderr, "    original: %s\n", str->text);
+            fprintf(stderr, "    decoded:  %s\n", buf);
+            return 0;
+        }
+
+    }
+    free(buf);
+    return 1;
 }
 
 /**
@@ -496,6 +561,7 @@ int main(int argc, char **argv)
 
     /* Read strings to encode. */
     strings = read_strings(input, frequencies);
+    fclose(input);
 
     /* Create Huffman leaf nodes. */
     symbol_count = 0;
@@ -521,6 +587,14 @@ int main(int argc, char **argv)
     /* Huffman-encode strings. */
     encode_strings(strings, code_nodes);
 
+    /* Sanity check */
+    if (!verify_data_integrity(strings, root)) {
+        /* Cleanup */
+        huffman_delete_node(root);
+        destroy_string_list(strings);
+        return(-1);
+    }
+
     /* Prepare output */
     if (!table_output_filename) {
         table_output_filename = "huffpuff.tab";
@@ -529,6 +603,9 @@ int main(int argc, char **argv)
     if (!table_output) {
         fprintf(stderr, "error: failed to open `%s' for writing\n",
                 table_output_filename);
+        /* Cleanup */
+        huffman_delete_node(root);
+        destroy_string_list(strings);
         return(-1);
     }
 
@@ -539,6 +616,9 @@ int main(int argc, char **argv)
     if (!data_output) {
         fprintf(stderr, "error: failed to open `%s' for writing\n",
                 data_output_filename);
+        /* Cleanup */
+        huffman_delete_node(root);
+        destroy_string_list(strings);
         return(-1);
     }
 
@@ -546,6 +626,8 @@ int main(int argc, char **argv)
     if (table_label && strlen(table_label))
         fprintf(table_output, "%s:\n", table_label);
     write_huffman_codes(table_output, root, charmap, node_label_prefix);
+
+    fclose(table_output);
 
     if (generate_string_table) {
         /* Print string pointer table */
@@ -562,15 +644,11 @@ int main(int argc, char **argv)
     /* Write the Huffman-encoded strings. */
     write_huffman_strings(data_output, strings, string_label_prefix);
 
-    /* Free the Huffman tree. */
-    huffman_delete_node(root);
-
-    /* Free string list */
-    destroy_string_list(strings);
-
-    fclose(input);
-    fclose(table_output);
     fclose(data_output);
+
+    /* Cleanup */
+    huffman_delete_node(root);
+    destroy_string_list(strings);
 
     return 0;
 }
