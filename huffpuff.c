@@ -364,7 +364,7 @@ void destroy_string_list(string_list_t *lst)
     }
 }
 
-static char program_version[] = "huffpuff 1.0.5";
+static char program_version[] = "huffpuff 1.0.6";
 
 /* Prints usage message and exits. */
 static void usage()
