@@ -109,7 +109,8 @@ typedef struct huffman_node_list huffman_node_list_t;
  * @param root Root node of Huffman tree
  */
 static void write_huffman_codes(FILE *out, huffman_node_t *root,
-                                const unsigned char *charmap)
+                                const unsigned char *charmap,
+                                const char *label_prefix)
 {
     huffman_node_list_t *current;
     huffman_node_list_t *tail;
@@ -125,16 +126,17 @@ static void write_huffman_codes(FILE *out, huffman_node_t *root,
         node = current->node;
         /* label */
         if (node != root)
-            fprintf(out, "@@node_%d_%d: ", node->code.code, node->code.length);
+            fprintf(out, "%snode_%d_%d: ", label_prefix,
+                    node->code.code, node->code.length);
         if (node->symbol != -1) {
             /* a leaf node */
             fprintf(out, ".db $00, $%.2X\n", charmap[node->symbol]);
         } else {
             /* an interior node -- print pointers to children */
             huffman_node_list_t *succ;
-            fprintf(out, ".db @@node_%d_%d-$, @@node_%d_%d-$+1\n",
-                    node->code.code << 1, node->code.length+1,
-                    (node->code.code << 1) | 1, node->code.length+1);
+            fprintf(out, ".db %snode_%d_%d-$, %snode_%d_%d-$+1\n",
+                    label_prefix, node->code.code << 1, node->code.length+1,
+                    label_prefix, (node->code.code << 1) | 1, node->code.length+1);
             /* add child nodes to list */
             succ = (huffman_node_list_t*)malloc(sizeof(huffman_node_list_t));
             succ->node = node->left;
@@ -370,7 +372,8 @@ static void usage()
     printf(
         "Usage: huffpuff [--character-map=FILE]\n"
         "                [--table-output=FILE] [--data-output=FILE]\n"
-        "                [--table-label=LABEL] [--string-label-prefix=PREFIX]\n"
+        "                [--table-label=LABEL] [--node-label-prefix=PREFIX]\n"
+        "                [--string-label-prefix=PREFIX]\n"
         "                [--generate-string-table]\n"
         "                [--help] [--usage] [--version]\n"
         "                FILE\n");
@@ -384,9 +387,11 @@ static void help()
            "  --character-map=FILE            Transform input according to FILE\n"
            "  --table-output=FILE             Store Huffman decoder table in FILE\n"
            "  --data-output=FILE              Store Huffman-encoded data in FILE\n"
-           "  --table-label=LABEL             Use given LABEL for Huffman decoder table\n"
-           "  --string-label-prefix=PREFIX    Use given PREFIX as string label prefix\n"
+           "  --table-label=LABEL             Use LABEL for Huffman decoder table\n"
+           "  --node-label-prefix=LABEL       Use PREFIX as Huffman node label prefix\n"
+           "  --string-label-prefix=PREFIX    Use PREFIX as string label prefix\n"
            "  --generate-string-table         Generate string pointer table\n"
+           "  --string-table-label=PREFIX     Use LABEL as string pointer table label\n"
            "  --help                          Give this help list\n"
            "  --usage                         Give a short usage message\n"
            "  --version                       Print program version\n");
@@ -419,7 +424,9 @@ int main(int argc, char **argv)
     const char *charmap_filename = 0;
     const char *table_output_filename = 0;
     const char *data_output_filename = 0;
-    const char *table_label = 0;
+    const char *table_label = "";
+    const char *node_label_prefix = "";
+    const char *string_table_label = "";
     const char *string_label_prefix = "";
     int generate_string_table = 0;
 
@@ -437,10 +444,14 @@ int main(int argc, char **argv)
                     data_output_filename = &opt[12];
                 } else if (!strncmp("table-label=", opt, 12)) {
                     table_label = &opt[12];
-                } else if (!strcmp("generate-string-table", opt)) {
-                    generate_string_table = 1;
+                } else if (!strncmp("node-label-prefix=", opt, 18)) {
+                    node_label_prefix = &opt[18];
                 } else if (!strncmp("string-label-prefix=", opt, 20)) {
                     string_label_prefix = &opt[20];
+                } else if (!strcmp("generate-string-table", opt)) {
+                    generate_string_table = 1;
+                } else if (!strncmp("string-table-label=", opt, 19)) {
+                    string_table_label = &opt[19];
                 } else if (!strcmp("help", opt)) {
                     help();
                 } else if (!strcmp("usage", opt)) {
@@ -482,9 +493,6 @@ int main(int argc, char **argv)
     } else {
         input = stdin;
     }
-
-    if (!table_label)
-        table_label = "huff_node_table";
 
     /* Read strings to encode. */
     strings = read_strings(input, frequencies);
@@ -537,17 +545,18 @@ int main(int argc, char **argv)
     /* Print the Huffman codes in code length order. */
     if (table_label && strlen(table_label))
         fprintf(table_output, "%s:\n", table_label);
-    write_huffman_codes(table_output, root, charmap);
+    write_huffman_codes(table_output, root, charmap, node_label_prefix);
 
     if (generate_string_table) {
         /* Print string pointer table */
         int i;
         string_list_t *lst;
-        fprintf(data_output, "huff_string_table:\n");
+        if (string_table_label && strlen(string_table_label))
+            fprintf(data_output, "%s:\n", string_table_label);
         for (i = 0, lst = strings; lst != 0; lst = lst->next, ++i) {
-            fprintf(data_output, ".dw @@String%d\n", i);
+            fprintf(data_output, ".dw %sString%d\n",
+                    string_label_prefix, i);
         }
-        string_label_prefix = "@@";
     }
 
     /* Write the Huffman-encoded strings. */
