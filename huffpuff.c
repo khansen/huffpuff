@@ -1,4 +1,3 @@
-#include <malloc.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -259,7 +258,7 @@ static void encode_strings(string_list_t *head, huffman_node_t * const *codes)
                 if (bitnum < 0) {
                     if (len == maxlen) {
                         maxlen += 128;
-                        buf = (char *)realloc(buf, maxlen);
+                        buf = (unsigned char *)realloc(buf, maxlen);
                     }
                     buf[len++] = enc;
                     bitnum = 7;
@@ -270,7 +269,7 @@ static void encode_strings(string_list_t *head, huffman_node_t * const *codes)
         if (bitnum != 7) {  // write last few bits
             if (len == maxlen) {
                 maxlen += 128;
-                buf = (char *)realloc(buf, maxlen);
+                buf = (unsigned char *)realloc(buf, maxlen);
             }
             buf[len++] = enc;
         }
@@ -290,7 +289,7 @@ static void encode_strings(string_list_t *head, huffman_node_t * const *codes)
  * @param out Where to store decoded string
  */
 static void decode_string(huffman_node_t *root, const unsigned char *data,
-                          int len, char *out)
+                          int len, unsigned char *out)
 {
     huffman_node_t *n;
     int mask = 0;
@@ -329,13 +328,13 @@ static int verify_data_integrity(string_list_t *head, huffman_node_t *root)
     unsigned char *buf = 0;
     int max_len = 0;
     for (str = head; str != NULL; str = str->next) {
-        int len = strlen(str->text);
+        int len = strlen((char *)str->text);
         if (len > max_len) {
             buf = (unsigned char *)realloc(buf, len + 1);
             max_len = len;
         }
         decode_string(root, str->huff_data, len, buf);
-        if (strcmp(buf, str->text)) {
+        if (strcmp((char *)buf, (char *)str->text)) {
             fprintf(stderr, "*** fatal error: decoded string is not equal to original string\n");
             fprintf(stderr, "    original: %s\n", str->text);
             fprintf(stderr, "    decoded:  %s\n", buf);
@@ -400,10 +399,10 @@ static void write_huffman_strings(FILE *out, const string_list_t *head,
         sprintf(strlabel, "%sString%d", label_prefix, string_id++);
 
         strcpy(strcomment, "\"");
-        if (strlen(string->text) < 40) {
-            strcat(strcomment, string->text);
+        if (strlen((char *)string->text) < 40) {
+            strcat(strcomment, (char *)string->text);
         } else {
-            strncat(strcomment, string->text, 37);
+            strncat(strcomment, (char *)string->text, 37);
             strcat(strcomment, "...");
         }
         strcat(strcomment, "\"");
