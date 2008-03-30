@@ -1,0 +1,30 @@
+huffpuff is a tool that encodes strings using Huffman compression.
+The tool is intended for NES development, thus the only supported
+output format is 6502 assembly.
+
+huffpuff is intended to be used to compress (large amounts of)
+in-game text, e.g. for cut scenes or NPC interaction.
+
+huffpuff takes as input a plaintext file containing the original
+(uncompressed) strings. Each line is regarded as a string to be
+encoded. Long strings can span several lines in the file by using
+backslash-newline. Empty lines are ignored. Lines that begin with
+the # character are ignored, i.e. they can be used as comments
+(use \# to start a real string with #).
+
+The huffpuff output consists of two basic parts: The Huffman
+decoder table, and the encoded string data. Both files contain
+6502 assembly. You need to add these files to your NES project.
+
+6502 code for decoding string data can be found elsewhere,
+e.g. in the NeoToxin sources (huffman.asm). First, call
+huff_set_decode_table() to set the decoder table. Then call
+huff_set_string() to set a string to decode. Now you can call
+huff_get_next_byte() to decode the next byte from the string.
+
+huffpuff can also generate a table of pointers to the encoded
+strings (--generate-string-table option). This enables you to
+refer to strings by index in other data, rather than by
+address; you write code that, given an index, looks up the
+corresponding address in the pointer table.
+
