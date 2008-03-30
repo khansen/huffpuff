@@ -20,7 +20,7 @@ huffpuff: $(OBJS)
 install: huffpuff
 	$(INSTALL) -m 0755 huffpuff $(bindir)
 
-.PHONY: clean
-
 clean:
 	rm -f $(OBJS) huffpuff huffpuff.exe
+
+.PHONY: clean install
