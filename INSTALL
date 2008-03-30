@@ -1,4 +1,4 @@
 
 		huffpuff installation
 
-Just do "make" followed by "make install".
+Normally you can just do "make" followed by "make install".

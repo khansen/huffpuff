@@ -505,17 +505,17 @@ static void help()
     printf("Usage: huffpuff [OPTION...] FILE\n"
            "huffpuff encodes strings using Huffman compression.\n\n"
            "Options:\n\n"
-           "  --character-map=FILE            Transform input according to FILE\n"
-           "  --table-output=FILE             Store Huffman decoder table in FILE\n"
-           "  --data-output=FILE              Store Huffman-encoded data in FILE\n"
-           "  --table-label=LABEL             Use LABEL for Huffman decoder table\n"
-           "  --node-label-prefix=LABEL       Use PREFIX as Huffman node label prefix\n"
-           "  --string-label-prefix=PREFIX    Use PREFIX as string label prefix\n"
+           "  --character-map=FILE            Transform characters according to the rules in FILE before encoding\n"
+           "  --table-output=FILE             Store Huffman decoder table definition in FILE\n"
+           "  --data-output=FILE              Store Huffman string data definition in FILE\n"
+           "  --table-label=LABEL             Create symbolic label LABEL for decoder table definition\n"
+           "  --node-label-prefix=PREFIX      Prefix symbolic labels in decoder table definition by PREFIX\n"
+           "  --string-label-prefix=PREFIX    Prefix symbolic labels in data definition by PREFIX\n"
            "  --generate-string-table         Generate string pointer table\n"
-           "  --string-table-label=PREFIX     Use LABEL as string pointer table label\n"
-           "  --append-byte=VALUE             Append VALUE to end of every string\n"
-           "  --ignore-case                   Convert input characters to lower-case\n"
-           "  --verbose                       Print statistics\n"
+           "  --string-table-label=LABEL      Create symbolic label LABEL for string pointer table definition\n"
+           "  --append-byte=VALUE             Append VALUE to every string before encoding\n"
+           "  --ignore-case                   Convert characters to lower-case before processing\n"
+           "  --verbose                       Print progress information to standard output\n"
            "  --help                          Give this help list\n"
            "  --usage                         Give a short usage message\n"
            "  --version                       Print program version\n");
@@ -578,6 +578,7 @@ int main(int argc, char **argv)
                     node_label_prefix = &opt[18];
                 } else if (!strncmp("string-label-prefix=", opt, 20)) {
                     string_label_prefix = &opt[20];
+                    generate_string_table = 1;
                 } else if (!strcmp("generate-string-table", opt)) {
                     generate_string_table = 1;
                 } else if (!strncmp("string-table-label=", opt, 19)) {
@@ -690,7 +691,7 @@ int main(int argc, char **argv)
 
     /* Prepare output */
     if (!table_output_filename) {
-        table_output_filename = "huffpuff.tab";
+        table_output_filename = "huffpuff.tab.asm";
     }
     table_output = fopen(table_output_filename, "wt");
     if (!table_output) {
@@ -703,7 +704,7 @@ int main(int argc, char **argv)
     }
 
     if (!data_output_filename) {
-        data_output_filename = "huffpuff.asm";
+        data_output_filename = "huffpuff.dat.asm";
     }
     data_output = fopen(data_output_filename, "wt");
     if (!data_output) {

@@ -19,6 +19,7 @@ huffpuff: $(OBJS)
 
 install: huffpuff
 	$(INSTALL) -m 0755 huffpuff $(bindir)
+	$(INSTALL) -m 0444 huffpuff.1 $(mandir)/man1
 
 clean:
 	rm -f $(OBJS) huffpuff huffpuff.exe
