@@ -189,7 +189,8 @@ typedef struct string_list string_list_t;
  * @param total_length If not NULL, the total number of characters is stored here
  * @return The resulting list of strings
  */
-string_list_t *read_strings(FILE *in, int *freq, int *total_length, int *string_count)
+string_list_t *read_strings(FILE *in, int ignore_case, int *freq,
+                            int *total_length, int *string_count)
 {
     unsigned char *buf;
     string_list_t *head;
@@ -236,7 +237,9 @@ string_list_t *read_strings(FILE *in, int *freq, int *total_length, int *string_
                 /* Allocate larger buffer */
                 max_len += 64;
                 buf = (unsigned char *)realloc(buf, max_len);
-             }
+            }
+            if (ignore_case && (c >= 'A') && (c <= 'Z'))
+                c += 0x20;
             buf[i++] = (unsigned char)c;
             freq[c]++;
         }
@@ -490,7 +493,7 @@ static void usage()
         "                [--table-label=LABEL] [--node-label-prefix=PREFIX]\n"
         "                [--string-label-prefix=PREFIX]\n"
         "                [--generate-string-table] [--append-byte=VALUE]\n"
-        "                [--verbose]\n"
+        "                [--ignore-case] [--verbose]\n"
         "                [--help] [--usage] [--version]\n"
         "                FILE\n");
     exit(0);
@@ -510,7 +513,8 @@ static void help()
            "  --string-label-prefix=PREFIX    Use PREFIX as string label prefix\n"
            "  --generate-string-table         Generate string pointer table\n"
            "  --string-table-label=PREFIX     Use LABEL as string pointer table label\n"
-           "  --append-byte=VALUE             Appends VALUE to end of every string\n"
+           "  --append-byte=VALUE             Append VALUE to end of every string\n"
+           "  --ignore-case                   Convert input characters to lower-case\n"
            "  --verbose                       Print statistics\n"
            "  --help                          Give this help list\n"
            "  --usage                         Give a short usage message\n"
@@ -544,6 +548,7 @@ int main(int argc, char **argv)
     FILE *table_output;
     FILE *data_output;
     int append_byte = -1;
+    int ignore_case = 0;
     const char *input_filename = 0;
     const char *charmap_filename = 0;
     const char *table_output_filename = 0;
@@ -583,6 +588,8 @@ int main(int argc, char **argv)
                         fprintf(stderr, "huffpuff: --append-byte: value must be in range 0..255\n");
                         return(-1);
                     }
+                } else if (!strcmp("ignore-case", opt)) {
+                    ignore_case = 1;
                 } else if (!strcmp("verbose", opt)) {
                     verbose = 1;
                 } else if (!strcmp("help", opt)) {
@@ -633,7 +640,7 @@ int main(int argc, char **argv)
     /* Read strings to encode. */
     if (verbose)
         fprintf(stdout, "reading strings\n");
-    strings = read_strings(input, frequencies, &char_count, &string_count);
+    strings = read_strings(input, ignore_case, frequencies, &char_count, &string_count);
     fclose(input);
 
     /* Create Huffman leaf nodes. */

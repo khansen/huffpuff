@@ -6,10 +6,10 @@ huffpuff is intended to be used to compress (large amounts of)
 in-game text, e.g. for cut scenes or NPC interaction.
 
 huffpuff takes as input a plaintext file containing the original
-(uncompressed) strings. Each line is regarded as a string to be
-encoded. Long strings can span several lines in the file by using
-backslash-newline. Empty lines are ignored. Lines that begin with
-the # character are ignored, i.e. they can be used as comments
+(uncompressed, ASCII) strings. Each line is regarded as a string
+to be encoded. Long strings can span several lines in the file by
+using backslash-newline. Empty lines are ignored. Lines that begin
+with the # character are ignored, i.e. they can be used as comments
 (use \# to start a real string with #).
 
 The huffpuff output consists of two basic parts: The Huffman
@@ -27,4 +27,10 @@ strings (--generate-string-table option). This enables you to
 refer to strings by index in other data, rather than by
 address; you write code that, given an index, looks up the
 corresponding address in the pointer table.
+
+Typically the NES character set is not identical to ASCII.
+You can use a character map file to specify how huffpuff
+should map the input (ASCII) characters to a target character
+set. See example.tbl for an example of how such a mapping is
+expressed.
 
