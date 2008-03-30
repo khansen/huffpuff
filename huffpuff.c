@@ -189,13 +189,15 @@ typedef struct string_list string_list_t;
  * @param total_length If not NULL, the total number of characters is stored here
  * @return The resulting list of strings
  */
-string_list_t *read_strings(FILE *in, int *freq, int *total_length)
+string_list_t *read_strings(FILE *in, int *freq, int *total_length, int *string_count)
 {
     unsigned char *buf;
     string_list_t *head;
     string_list_t **nextp;
     int max_len;
     int i;
+    if (string_count)
+        *string_count = 0;
 
     /* Zap frequency counts. */
     for (i = 0; i < 256; i++)
@@ -214,29 +216,29 @@ string_list_t *read_strings(FILE *in, int *freq, int *total_length)
         int in_comment = 0;
         i = 0;
         while (((c = fgetc(in)) != -1) && (c != STRING_SEPARATOR)) {
-                if (c == '\\') {
-                    /* Check for line escape */
-                    int d;
-                    d = fgetc(in);
-                    if (d == STRING_SEPARATOR) {
-                        continue;
-                    } else if (d == '#') {
-                        c = '#';
-                    } else {
-                        ungetc(d, in);
-                    }
-                } else if ((i == 0) && (c == '#')) {
-                    in_comment = 1;
-		}
-                if (in_comment)
+            if (c == '\\') {
+                /* Check for line escape */
+                int d;
+                d = fgetc(in);
+                if (d == STRING_SEPARATOR) {
                     continue;
-                if (i == max_len) {
-                    /* Allocate larger buffer */
-                    max_len += 64;
-                    buf = (unsigned char *)realloc(buf, max_len);
+                } else if (d == '#') {
+                    c = '#';
+                } else {
+                    ungetc(d, in);
                 }
-                buf[i++] = c;
-                freq[c]++;
+            } else if ((i == 0) && (c == '#')) {
+                in_comment = 1;
+	    }
+            if (in_comment)
+                continue;
+            if (i == max_len) {
+                /* Allocate larger buffer */
+                max_len += 64;
+                buf = (unsigned char *)realloc(buf, max_len);
+             }
+            buf[i++] = (unsigned char)c;
+            freq[c]++;
         }
 
         if (i > 0) {
@@ -252,6 +254,8 @@ string_list_t *read_strings(FILE *in, int *freq, int *total_length)
             nextp = &(lst->next);
             if (total_length)
                 *total_length = *total_length + i;
+            if (string_count)
+                *string_count = *string_count + 1;
         }
     }
     free(buf);
@@ -264,7 +268,8 @@ string_list_t *read_strings(FILE *in, int *freq, int *total_length)
  * @param codes Mapping from character to Huffman node
  * @return The size of the encoded string data
  */
-static int encode_strings(string_list_t *head, huffman_node_t * const *codes)
+static int encode_strings(string_list_t *head, huffman_node_t * const *codes,
+                          int append_byte)
 {
     string_list_t *string;
     unsigned char *buf = 0;
@@ -274,16 +279,23 @@ static int encode_strings(string_list_t *head, huffman_node_t * const *codes)
     for (string = head; string != NULL; string = string->next) {
         /* Do all characters in string. */
         unsigned char enc = 0;
-        const huffman_node_t *node;
         int i;
-        int len;
-        int bitnum;
-        unsigned char *p;
-        len=0;
-        bitnum=7;
-        p = string->text;
-        while (*p) {
-            node = codes[*(p++)];
+        int len = 0;
+        int bitnum = 7;
+        const unsigned char *p = string->text;
+        int apd = append_byte;
+        while (1) {
+            const huffman_node_t *node;
+            unsigned char c;
+            if (*p) {
+                c = *(p++);
+            } else if (apd != -1) {
+                c = (unsigned char)append_byte;
+                apd = -1;
+            } else {
+                break;
+            }
+            node = codes[c];
             for (i = node->code.length-1; i >= 0; i--) {
                 enc |= ((node->code.code >> i) & 1) << bitnum--;
                 if (bitnum < 0) {
@@ -477,7 +489,8 @@ static void usage()
         "                [--table-output=FILE] [--data-output=FILE]\n"
         "                [--table-label=LABEL] [--node-label-prefix=PREFIX]\n"
         "                [--string-label-prefix=PREFIX]\n"
-        "                [--generate-string-table]\n"
+        "                [--generate-string-table] [--append-byte=VALUE]\n"
+        "                [--verbose]\n"
         "                [--help] [--usage] [--version]\n"
         "                FILE\n");
     exit(0);
@@ -497,6 +510,7 @@ static void help()
            "  --string-label-prefix=PREFIX    Use PREFIX as string label prefix\n"
            "  --generate-string-table         Generate string pointer table\n"
            "  --string-table-label=PREFIX     Use LABEL as string pointer table label\n"
+           "  --append-byte=VALUE             Appends VALUE to end of every string\n"
            "  --verbose                       Print statistics\n"
            "  --help                          Give this help list\n"
            "  --usage                         Give a short usage message\n"
@@ -517,6 +531,7 @@ static void version()
 int main(int argc, char **argv)
 {
     int char_count;
+    int string_count;
     int encoded_size;
     unsigned char charmap[256];
     int frequencies[256];
@@ -528,6 +543,7 @@ int main(int argc, char **argv)
     FILE *input;
     FILE *table_output;
     FILE *data_output;
+    int append_byte = -1;
     const char *input_filename = 0;
     const char *charmap_filename = 0;
     const char *table_output_filename = 0;
@@ -561,6 +577,12 @@ int main(int argc, char **argv)
                     generate_string_table = 1;
                 } else if (!strncmp("string-table-label=", opt, 19)) {
                     string_table_label = &opt[19];
+                } else if (!strncmp("append-byte=", opt, 12)) {
+                    append_byte = strtol(&opt[12], 0, 0);
+                    if ((append_byte < 0) || (append_byte >= 256)) {
+                        fprintf(stderr, "huffpuff: --append-byte: value must be in range 0..255\n");
+                        return(-1);
+                    }
                 } else if (!strcmp("verbose", opt)) {
                     verbose = 1;
                 } else if (!strcmp("help", opt)) {
@@ -611,7 +633,7 @@ int main(int argc, char **argv)
     /* Read strings to encode. */
     if (verbose)
         fprintf(stdout, "reading strings\n");
-    strings = read_strings(input, frequencies, &char_count);
+    strings = read_strings(input, frequencies, &char_count, &string_count);
     fclose(input);
 
     /* Create Huffman leaf nodes. */
@@ -620,6 +642,8 @@ int main(int argc, char **argv)
     symbol_count = 0;
     {
         int i;
+        if (append_byte != -1)
+            frequencies[append_byte] += string_count;
         for (i=0; i<256; i++) {
             if (frequencies[i] > 0) {
                 huffman_node_t *node;
@@ -644,7 +668,7 @@ int main(int argc, char **argv)
     /* Huffman-encode strings. */
     if (verbose)
         fprintf(stdout, "encoding strings\n");
-    encoded_size = encode_strings(strings, code_nodes);
+    encoded_size = encode_strings(strings, code_nodes, append_byte);
 
     /* Sanity check */
     if (verbose)
