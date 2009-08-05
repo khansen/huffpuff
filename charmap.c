@@ -78,9 +78,9 @@ static void eat_ws(char *s, int *i)
  * @param i Pointer to index of first character of key in s
  * @param d Where to store the parsed key
  */
-static int get_key(char *s, int *i, char *d)
+static int get_key(char *s, int *i, unsigned char *d)
 {
-    char key;
+    unsigned char key;
     /* Read first character */
     key = s[(*i)++];
     /* Make sure we've not hit end of string */
