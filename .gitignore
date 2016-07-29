@@ -1,0 +1,5 @@
+*.o
+huffpuff.dat.asm
+huffpuff.tab.asm
+huffpuff
+
